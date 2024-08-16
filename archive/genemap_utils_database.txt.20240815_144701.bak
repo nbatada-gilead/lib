@@ -1,0 +1,16 @@
+genesymbol_to_ensgeneid.file.raw=hgnc/hgnc_complete_set.txt
+genesymbol_to_ensgeneid.file.map=hgnc/genesymbol2geneid_hgnc.map
+genesymbol_to_ensgeneid.source=https://www.genenames.org/download/archive/
+genesymbol_to_ensgeneid.species=human
+genesymbol_to_ensgeneid.script=hgnc/hgnc_gene_alias_map.ipynb
+genesymbol_to_ensgeneid.info=genename alias. hgnc is a authoritative source for canonical genesymbols
+is_cellsurface.file.raw=/Users/nbatada/data/geneinfo/genemaps/is_cellsurface/subcellular_location.tsv
+is_cellsurface.file.map=/Users/nbatada/data/geneinfo/genemaps/is_cellsurface/is_cellsurface.map
+is_cellsurface.source=hpa
+is_cellsurface.species=human
+is_cellsurface.script=create_map.ipynb
+is_housekeeping.file.raw=/Users/nbatada/data/geneinfo/genesets/proteinatlas/proteinatlas.tsv
+is_housekeeping.file.map=/Users/nbatada/data/geneinfo/genemaps/is_housekeeping/is_housekeeping.map
+is_housekeeping.source=hpa
+is_housekeeping.species=human
+is_housekeeping.script=create_map.ipynb

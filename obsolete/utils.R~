@@ -1,0 +1,40 @@
+library(ggplot2)
+
+plot_expr_of_gene_by_condition <- function(df_expr, df_meta, gene, condition) {
+  
+  # Extract gene expression values
+  gene_counts <- df_expr[gene, ]
+  
+  # Create a data frame for plotting
+  plot_data <- data.frame(
+    Sample = colnames(df_expr),
+    Expression = gene_counts,
+    Condition = df_meta[[condition]][match(colnames(df_expr), rownames(df_meta))]
+  )
+  
+  # Create the plot
+  p <- ggplot(plot_data, aes(x = Condition, y = Expression, fill = Condition)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.2, alpha = 0.7) +
+    labs(title = sprintf("%s Expression by %s", gene, condition),
+         x = condition,
+         y = "Normalized Expression") +
+    theme_minimal()
+  
+  # Compute statistical difference
+  condition_levels <- unique(plot_data$Condition)
+  group1_values <- gene_counts[plot_data$Condition == condition_levels[1]]
+  group2_values <- gene_counts[plot_data$Condition == condition_levels[2]]
+  wilcox_result <- wilcox.test(group1_values, group2_values)
+  
+  # Add p-value to the plot
+  p <- p + 
+    annotate("text", x = 1.5, y = max(plot_data$Expression), 
+             label = sprintf("p = %.4f", wilcox_result$p.value), 
+             vjust = -0.5)
+  
+  print(p)
+  
+  # Return the p-value as well
+  return(wilcox_result$p.value)
+}
