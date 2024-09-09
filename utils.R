@@ -2,6 +2,57 @@ library(ggplot2)
 library(dplyr)    # alternatively, this also loads %>%
 
 
+
+rename_genes_ensembl_to_hgnc <- function(sobj, species = "human", mirror = "useast") {
+   # usage: 
+   # sobj <- rename_genes_ensembl_to_hgnc(sobj, species = "human", mirror = "useast")
+   
+   library(biomaRt)
+   
+   # Choose the correct dataset and use a mirror
+   if (species == "human") {
+      ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", mirror = mirror)
+   } else if (species == "mouse") {
+      ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl", mirror = mirror)
+   } else {
+      stop("Unsupported species. Use 'human' or 'mouse'.")
+   }
+   
+   # Extract Ensembl IDs
+   ensembl_ids <- rownames(sobj)
+   
+   # Query biomaRt to get HGNC symbols for the Ensembl IDs
+   gene_info <- getBM(
+      attributes = c("ensembl_gene_id", "hgnc_symbol"),
+      filters = "ensembl_gene_id",
+      values = ensembl_ids,
+      mart = ensembl
+   )
+   
+   # Create a named vector for mapping
+   ensembl_to_hgnc <- setNames(gene_info$hgnc_symbol, gene_info$ensembl_gene_id)
+   
+   # Replace Ensembl IDs with HGNC symbols, keeping the original Ensembl ID if no symbol is found
+   gene_symbols <- ensembl_to_hgnc[ensembl_ids]
+   gene_symbols[is.na(gene_symbols)] <- ensembl_ids[is.na(gene_symbols)]
+   
+   # Ensure uniqueness of rownames after replacement
+   unique_gene_symbols <- make.unique(gene_symbols)
+   
+   # Update rownames in counts and data slots
+   rownames(sobj@assays$RNA@counts) <- unique_gene_symbols
+   rownames(sobj@assays$RNA@data) <- unique_gene_symbols
+   
+   # Ensure metadata consistency if present
+   if ("meta.features" %in% slotNames(sobj@assays$RNA)) {
+      sobj@assays$RNA@meta.features <- sobj@assays$RNA@meta.features[unique_gene_symbols, , drop = FALSE]
+   }
+   
+   # Return the updated Seurat object
+   return(sobj)
+}
+
+
 stats_check_if_gene_is_de <- function(df_expr, df_meta, gene, condition) {
    
    # Check if the gene exists in df_expr

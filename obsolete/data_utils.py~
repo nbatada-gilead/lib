@@ -1,86 +1,51 @@
-# Nizar Batada
-# 8 August 2024
-# Gilead
-
-# NOTE: This script relies on the associated data_utils_database.txt file where all the data resides
-
 import re
 import pandas as pd
 import importlib.util
-import os
 from pathlib import Path
 import shutil
 from datetime import datetime
-
-database={}
-DATA_DIR = os.path.join( os.path.expanduser("~"), 'data', 'rnaseq') 
+import os
+HOME=os.path.expanduser("~")
+import sys
+sys.path.insert(0,f'{HOME}/lib')
+import utils
+import logging
+database = {}
+DATA_DIR = os.path.join(HOME, 'data', 'rnaseq')
 DATABASE_FILE_PATH = os.path.join(os.path.dirname(__file__), 'data_utils_database.txt')
 
-
-#------------ This will be executed when module is loaded 
-
 def __load_database(file_path=DATABASE_FILE_PATH):
-    """Parse the database file and create a nested dictionary."""
-    
     global database
     database = {}
 
     with open(file_path, 'r') as file:
         for line in file:
-            # Strip whitespace and ignore empty lines
             line = line.strip()
             if not line:
                 continue
 
-            # Split the line into key and value
             key, value = line.split('=', 1)
-            
-            # Extract the data_handle and sub_key
             try:
                 data_handle, sub_key = key.split('.', 1)
             except ValueError:
                 print(f"Skipping invalid line: {line}")
                 continue
-            
-            # Ensure the database structure is correct
+
+            data_handle = data_handle.upper()
+
             if data_handle not in database:
                 database[data_handle] = {}
             database[data_handle][sub_key] = value
 
-# Initialize database with the file
 __load_database(DATABASE_FILE_PATH)
 
-def __update_database(file_path=DATABASE_FILE_PATH):
-    """Write the database dictionary back to the file in the original format."""
-
-    # Create a backup with a timestamp
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_file_path = f"{file_path}.{timestamp}.bak"
-    shutil.copy(file_path, backup_file_path)
-
-    # Write the updated database to the original file
-    with open(file_path, 'w') as file:
-        for data_handle, sub_dict in database.items():
-            if not isinstance(sub_dict, dict):
-                raise ValueError(f"Expected dictionary for {data_handle}, got {type(sub_dict).__name__}.")
-            
-            for sub_key, value in sub_dict.items():
-                if isinstance(value, str) and sub_key.startswith('files.'):
-                    # Remove DATA_DIR and data_handle prefixes if necessary
-                    value = os.path.basename(value)
-                
-                line = f"{data_handle}.{sub_key}={value}\n"
-                file.write(line)
-
-
-#------------------------------------------------------------
 DATA_ORDER = {
     'experiment.species': 1,
     'experiment.tissue': 2,
-    'experiment.disease': 3,  
-    'experiment.disease_list': 4,  
+    'experiment.disease': 3,
+    'experiment.disease_list': 4,
     'experiment.celltype': 5,
-    'experiment.celltype_definition': 6,  
+    'experiment.celltype_definition': 6,
     'experiment.design': 7,
     'experiment.nsamples': 8,
     'assay.type': 9,
@@ -92,174 +57,433 @@ DATA_ORDER = {
     'files.processed.counts': 15,
     'files.processed.normalized': 16,
     'files.processed.meta': 17,
-    'files.processed.scrnaseq_obj': 18,
+    'files.processed.rds': 18,
     'files.processed.source': 19,
     'files.processed.qc': 20,
-    'files.reprocessed.counts': 21,
-    'files.reprocessed.normalized': 22,
-    'files.reprocessed.meta': 23,
-    'files.reprocessed.scrnaseq_obj': 24,
-    'files.reprocessed.source': 25,
-    'files.reprocessed.qc': 26,
-    'manuscript.info': 27,
-    'manuscript.doi': 28,
-    'manuscript.url_supplementary_data': 29,
+    'files.processed.deg': 21,
+    'files.processed.notes':22,
+    'files.reprocessed.counts': 23,
+    'files.reprocessed.normalized': 24,
+    'files.reprocessed.meta': 25,
+    'files.reprocessed.scrnaseq_obj': 26,
+    'files.reprocessed.source': 27,
+    'files.reprocessed.qc': 28,
+    'files.reprocessed.deg': 29,
+    'files.reprocessed.notes':30,
+    'manuscript.info': 31,
+    'manuscript.doi': 32,
+    'manuscript.url_supplementary_data': 33,
+    'manuscript.notes': 34,
+    'manuscript.pdf':35,
+    'files.raw_dir': 36,
+    'files.processed_dir': 37,
+    'files.reprocessed_dir': 38,
+    'colname_celltype':39,
+    'colname_celltype_value_treg':40, # name of the column value in the cell type
+    'colname_tissue':41, # name of the column where tissue information is given
+    'colname_treg_subtype':42,
+    'colname_group':43,
+    'files.analysis_ready':44,
 }
 
+def __update_database(file_path=DATABASE_FILE_PATH):
+    if os.path.isfile(file_path):
+        try:
+            with open(file_path, 'r+'):
+                pass
+        except IOError:
+            input(f"The file {file_path} is currently open. Please close it and press Enter to continue.")
 
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_file_path = f"{file_path}.{timestamp}.bak"
+    shutil.copy(file_path, backup_file_path)
+
+    with open(file_path, 'w') as file:
+        for data_handle, sub_dict in database.items():
+            data_handle = data_handle.upper()
+            for sub_key, value in sub_dict.items():
+                line = f"{data_handle}.{sub_key}={value}\n"
+                file.write(line)
+
+def getInfo(data_handle):
+    data_handle = data_handle.upper()
+    info = []
+
+    #def flatten_dict(d, parent_key=''):
+    #    for k, v in d.items():
+    #        new_key = f"{parent_key}.{k}" if parent_key else k
+    #        if isinstance(v, dict):
+    #            flatten_dict(v, new_key)
+    #        else:
+    #            info.append((new_key, v))
+
+    data_full = database.get(data_handle, {})
+    data  ={}
+    for key, value in data_full.items():
+        #if key.startswith('files.'):
+        #    continue
+        #else:
+        data[key] = value
+
+    #flatten_dict(data)
+    #sorted_info = sorted(info, key=lambda x: DATA_ORDER.get(x[0], float('inf')))
+    #df = pd.DataFrame(sorted_info, columns=['Key', 'Value'])
+    #df_transposed = df.set_index('Key').T
+    #df_transposed.index = [data_handle]
+    #df_transposed.columns.name = 'data_handle'
+    #return df_transposed
+    return(data)
+
+
+def deleteData(data_handle):
+    data_handle = data_handle.upper()
+    if data_handle not in database:
+        print(f"Data handle '{data_handle}' not found.")
+        return
+
+    non_empty_count = sum(1 for v in database[data_handle].values() if v.strip())
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_file_path = f"{DATABASE_FILE_PATH}.{timestamp}.bak"
+    shutil.copy(DATABASE_FILE_PATH, backup_file_path)
+
+    del database[data_handle]
+    __update_database()
+    
+    # print(f"Data handle '{data_handle}' has been deleted and the database has been updated.")
 
 def listAvailableData():
     """Prints out the keys in the database dictionary."""
-    print(list(database.keys()))
-
-def queryData(query, keyword=None):
-    """Search for data_handles in the database that meet certain criteria."""
-    query = query.lower()
-    result = []
-
-    # Check if the query is a prefix for data_handle
-    for data_handle in database:
-        if query in data_handle.lower():
-            result.append(data_handle)
-        else:
-            data = database[data_handle]
-            if keyword and keyword in data:
-                for v in data[keyword].values():
-                    if query in str(v).lower():
-                        result.append(data_handle)
-                        break
-    if len(result)==1:
-        result=result[0] # just the string if it's a unique data_handle
-    return result
+    return(list(database.keys()))
 
 
-def getFiles(data_handle):
-    """Retrieve file paths for a specific data handle."""
-
-    out={}
-    from pathlib import Path
-    for key, value in database[data_handle].items():
-        if key.startswith('files.'):
-            if Path(value).suffix in {'.csv','.tsv','.txt'} and not value.startswith('http'):
-                value = os.path.join(DATA_DIR, data_handle, value)
-
-            key=key.removeprefix('files.')
-            out[key]=value
-        
-    return(out)
-
-    
-def createFileName(data_handle): 
-    ''' Will update database, will write to the database.txt'''
-
-    UPDATE_DATABASE=False
-    files=getFiles(data_handle)
-    if files['reprocessed.counts']=='':
-        database[data_handle]['files.reprocessed.counts']= os.path.join(DATA_DIR, data_handle, data_handle + '_reprocessed_expr_counts.csv')
-        UPDATE_DATABASE=True
-    else:
-        print('reprocessed.counts file already exists: ', files['reprocessed.counts'])
-    if files['reprocessed.meta']=='':
-        database[data_handle]['files.reprocessed.meta']= os.path.join(DATA_DIR, data_handle, data_handle + '_reprocessed_meta.csv')
-        UPDATE_DATABASE=True
-        
-    else:
-        print('reprocessed.meta file already exists: ', files['reprocessed.meta'])
-    if UPDATE_DATABASE:
-        # BUT I NEED TO NOT ADD THE FULL PATH
-        __update_database()
-    
-    # write the database to the file
-    
-    
-    
-    
-def getInfo(data_handle, tsv_format=True):
-    """Retrieve and format data from the database."""
-    info = []
-
-    def flatten_dict(d, parent_key=''):
-        for k, v in d.items():
-            new_key = f"{parent_key}.{k}" if parent_key else k
-            if isinstance(v, dict):
-                flatten_dict(v, new_key)
-            else:
-                info.append((new_key, v))
-
-    # Assuming 'database' is the dictionary holding the data
-    data = database.get(data_handle, {})
-
-    flatten_dict(data)
-
-    # Sort info according to DATA_ORDER
-    sorted_info = sorted(info, key=lambda x: DATA_ORDER.get(x[0], float('inf')))
-
-    if tsv_format:
-        # Convert to pandas DataFrame and transpose
-        df = pd.DataFrame(sorted_info, columns=['Key', 'Value'])
-        df_transposed = df.set_index('Key').T
-        df_transposed.index = [data_handle]
-        df_transposed.columns.name = 'data_handle'
-        return df_transposed
-    else:
-        # Print in two-column format
-        for key, value in sorted_info:
-            print(f"{key}\t{value}")
-
+# make this obsolete. To simplify-- just use getInfo and use the parameters with the 'files.' prefix
+#def getFiles(data_handle):
+#    """Retrieve file paths for a specific data handle."""
+#    data_handle = data_handle.upper()
+#    if data_handle not in database:
+#        print(f"Data handle '{data_handle}' not found.")
+#        return {}
+#    
+#    out = {}
+#    from pathlib import Path
+#    for key, value in database[data_handle].items():
+#        if key.startswith('files.'):
+#            key = key.removeprefix('files.')
+#            out[key] = value
+#    return out
 
 def newDataTemplate(data_handle):
     """Print a template for the specified data handle using DATA_ORDER."""
-    
+    data_handle = data_handle.upper()
     def print_nested_dict(prefix, d):
         """Recursively print nested dictionary keys with prefix."""
         for k, v in d.items():
             if isinstance(v, dict):
-                # Recursive call for nested dictionaries
                 print_nested_dict(f"{prefix}.{k}", v)
             else:
-                # Print key-value pairs for non-dictionary values
                 print(f"{prefix}.{k}=")
-    
+
     for key in sorted(DATA_ORDER, key=DATA_ORDER.get):
         parts = key.split('.')
         if len(parts) > 1:
-            # Build the key path from parts
             print_nested_dict(data_handle, {parts[0]: {k: '' for k in parts[1:]}})
         else:
-            # Handle top-level keys
             print(f"{data_handle}.{key}=")
 
 def help():
     import inspect
-    
-    # Get the current module
+
     module = inspect.getmodule(inspect.currentframe())
-    
-    # Get the names of all functions
+
     functions = [name for name, obj in inspect.getmembers(module, inspect.isfunction)]
-    
-    # Print exported functions with arguments and comments
+
     print("Exported Functions:")
-    i=1
+    i = 1
     for func_name in functions:
         if func_name.startswith('help') or func_name.startswith('__'): continue
         func = getattr(module, func_name)
-        # Get function signature
         signature = inspect.signature(func)
-        # Get the function's docstring (comment right after definition)
         docstring = inspect.getdoc(func)
-        
-        # Print function name and arguments
+
         args = [f"{param.name}={param.default}" if param.default != inspect.Parameter.empty else param.name for param in signature.parameters.values()]
         args_str = ", ".join(args)
         print(f"{i})  - {func_name}({args_str})")
-        i+=1
-        # Print the docstring if available
+        i += 1
         if docstring:
             print(f"          {docstring}")
             print("\n")
 
-# Add this to your module to use the help() function
-if __name__ == "__main__":
-    help()
+            
+def updateInfo(data_handle=None, help=False, **kwargs):
+    """Update the information for a given data handle with key=value pairs. provide it as **{key:value}. Keys are defined in DATA_ORDER and should be full (i.e. files.processed_dir not processed_dir)"""
     
+    if help:
+        print("Usage: updateInfo(data_handle, key1=value1, key2=value2, ...)")
+        print("Keys available for update:", '\n'.join(DATA_ORDER.keys()))
+        return
+
+    if not data_handle:
+        print("Error: 'data_handle' must be provided unless 'help=True' is specified.")
+        return
+
+    data_handle = data_handle.upper()
+    
+    # Initialize if data_handle doesn't exist in the database
+    if data_handle not in database:
+        database[data_handle] = {key: '' for key in DATA_ORDER}
+    
+    # Check each provided key and warn if it's not valid
+    valid_keys = DATA_ORDER.keys()
+    for key, value in kwargs.items():
+        if key not in valid_keys:
+            # Suggest similar valid keys
+            closest_match = [k for k in valid_keys if key in k]
+            suggestion = f" Instead, specify '{closest_match[0]}'" if closest_match else ""
+            print(f"Warning: Key '{key}' not found in DATA_ORDER.{suggestion}")
+        else:
+            # Update the database if the key is valid
+            database[data_handle][key] = value
+
+    # Persist the database updates
+    __update_database()
+
+
+def build_key_mapping(data_order):
+    """
+    Build a dictionary to map partial keynames to full keynames from DATA_ORDER.
+    """
+    key_mapping = {}
+    for key in data_order:
+        if key.startswith('files.'):
+            continue
+        
+        parts = key.split('.')
+        for i in range(len(parts)):
+            partial_key = '.'.join(parts[i:])
+            if partial_key not in key_mapping:
+                key_mapping[partial_key] = []
+            key_mapping[partial_key].append(key)
+    
+    # Remove ambiguous mappings by checking if a partial key maps to multiple full keys
+    for partial_key in key_mapping:
+        if len(set(key_mapping[partial_key])) > 1:
+            print(f"Warning: Partial key '{partial_key}' maps to multiple full keys: {set(key_mapping[partial_key])}")
+    
+    return key_mapping
+
+def searchDatabase(query, restrict_to_key=None, restrict_to_keyvalue=None):
+    """
+    Search for data_handles in the database based on the query and optional restrictions.
+    """
+    if query.lower() == 'help':
+        help_searchDatabase()
+        return {}
+
+    result = {}
+    query = query.lower()
+    query_upper = query.upper()  # Convert query to uppercase for data_handle comparison
+
+    # Build key mapping dictionary
+    key_mapping = build_key_mapping(DATA_ORDER)
+
+    # Parse restrict_to_keyvalue
+    keyname = None
+    value = None
+    if restrict_to_keyvalue:
+        keyname, value = (restrict_to_keyvalue.split('=', 1) if '=' in restrict_to_keyvalue else (None, None))
+        keyname = keyname.strip().lower() if keyname else None
+        value = value.strip().lower() if value else None
+
+    # Define keys to ignore
+    ignore_keys = [k for k in DATA_ORDER if k.startswith('files.')]
+
+    for data_handle, data in database.items():
+        data_handle = data_handle.upper()  # Ensure data_handle is uppercase
+        key_matches = []
+
+        # Check if query matches the data_handle
+        if query_upper in data_handle:
+            result.setdefault(data_handle, [])
+
+        if restrict_to_key:
+            restrict_to_key = restrict_to_key.strip().lower()
+            restrict_to_key_parts = restrict_to_key.split('.')
+            full_keyname = '.'.join(restrict_to_key_parts)
+            partial_keyname = restrict_to_key_parts[-1]
+
+            if full_keyname in ignore_keys:
+                continue
+
+            # Resolve partial keynames
+            resolved_keys = key_mapping.get(partial_keyname, [])
+            if full_keyname in data:
+                if query in str(data[full_keyname]).lower():
+                    key_matches.append(full_keyname)
+            elif resolved_keys:
+                for resolved_key in resolved_keys:
+                    if query in str(data.get(resolved_key, '')).lower():
+                        key_matches.append(resolved_key)
+
+            # Handle restrict_to_keyvalue
+            if key_matches:
+                if keyname:
+                    keyname_matches = any(k.endswith(keyname) for k in data)
+                    if keyname_matches:
+                        if value and (any(str(data.get(k)).lower() == value for k in data if keyname in k.lower())):
+                            result.setdefault(data_handle, []).extend(key_matches)
+                else:
+                    result.setdefault(data_handle, []).extend(key_matches)
+
+        else:
+            matched_keys = [k for k in data if k not in ignore_keys and query in str(data[k]).lower()]
+            if matched_keys:
+                if keyname:
+                    if keyname in data and (str(data.get(keyname)).lower() == value):
+                        result[data_handle] = matched_keys
+                else:
+                    result[data_handle] = matched_keys
+
+    if not result:
+        print(f"No data record found for the query '{query}' and/or restrict_to_key '{restrict_to_key}' and/or restrict_to_keyvalue '{restrict_to_keyvalue}'")
+
+    return result
+
+def help_searchDatabase():
+    """Print usage information for the searchDatabase function."""
+    print("Usage:")
+    print("    searchDatabase(query, restrict_to_key=None, restrict_to_keyvalue=None)")
+    print()
+    print("Parameters:")
+    print("    query (str): Search term for keys and values in the database.")
+    print("    restrict_to_key (str, optional): Limit search to this specific keyname.")
+    print("    restrict_to_keyvalue (str, optional): Restrict search to data_handles with this key=value.")
+    print()
+    print("Examples:")
+    print("    searchDatabase('cancer')")
+    print("    searchDatabase(query='cancer')")
+    print("    searchDatabase(query='cancer', restrict_to_key='experiment.disease')")
+    print("    searchDatabase(query='cancer', restrict_to_key='celltype', restrict_to_keyvalue='experiment.species=human')")
+    print("    searchDatabase(query='cancer', restrict_to_key='celltype', restrict_to_keyvalue='species=human')")
+
+
+
+
+
+def prepareData(data_handle, GENES):
+    """
+    Prepares RNA-seq data from a Seurat object and processes gene expression data.
+
+    Parameters:
+    - data_handle: The key to retrieve files from data_utils.
+    - GENES: List of genes to process.
+
+    Expected fields in getInfo object:
+    - colname_celltype: Column name for cell type classification.
+    - colname_celltype_value_treg: Specific cell type value to identify Treg cells.
+    - colname_tissue: Column name for tissue information.
+    - colname_treg_subtype: Column name for Treg subclustering.
+    - colname_group: Column name for group information.
+    - script_path: Path to the script for running Seurat object gene extraction.
+    - default_genes: List of default genes to be included if missing from GENES.
+
+    Usage:
+    df = prepareData(
+      data_handle='CANCER_2020_32603654_LUOMA', 
+      GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFNG', 'IL17A', 'CTLA4', 'PDCD1', 'CD27', 'IKZF2', 'TNFRSF18', 'CD177', 'TNFRSF8', 'CD74', 'FUT7', 'IL1R2', 'IL12RB2', 'TNFRSF4', 'CXCR3', 'STAT1', 'IL10'], 
+      colname_celltype='authors_cell_type_level_2__cd4_t_cell', 
+      colname_celltype_value_treg='7__regulatory_t_cell_treg', 
+      colname_tissue='tissue_column_name', 
+      colname_treg_subtype='authors_cell_type_level_3__treg_subclustering', 
+      colname_group='group_column_name'
+    )
+
+    """
+    
+    script_path = os.path.expanduser('~/bin')
+
+    # Check if the data_handle exists in data_utils
+    if data_handle not in database:
+        raise ValueError(f"Data handle '{data_handle}' not found in data_utils.")
+
+    d_info=getInfo(data_handle)
+    
+    # Ensure the required files exist in the data_handle
+    required_files = ['files.processed.meta', 'files.processed_dir', 'files.processed.rds']
+    missing_files = [f for f in required_files if f not in d_info]
+    if missing_files:
+        raise ValueError(f"Missing files for data_handle '{data_handle}': {', '.join(missing_files)}")
+    
+    # Ensure the gene list is valid
+    if not GENES or not isinstance(GENES, list):
+        raise ValueError("GENES must be a non-empty list of gene names.")
+    
+    colname_celltype = d_info.get('colname_celltype',None)
+    if not colname_celltype:
+        raise ValueError("getInfo doesn't define required parameter: colname_celltype.")
+    
+    colname_celltype_value_treg = d_info.get('colname_celltype_value_treg', None)
+    if not colname_celltype_value_treg:
+        raise ValueError("getInfo doesn't define required parameter: colname_celltype_value_treg.")
+    
+    colname_tissue = d_info.get('colname_tissue', None)
+    if not colname_tissue:
+        raise ValueError("getInfo doesn't define required parameter: colname_tissue.")
+    
+    colname_treg_subtype = d_info.get('colname_treg_subtype', None)
+    if not colname_treg_subtype:
+        raise ValueError("getInfo doesn't define required parameter: colname_treg_subtype.")
+    
+    colname_group = d_info.get('colname_group')
+    if not colname_group:
+        raise ValueError("getInfo doesn't define required parameter: colname_group.")
+    
+    # Run external Seurat processing script
+    RDS = d_info['files.processed.rds']
+    DIR = d_info['files.processed_dir']    
+    os.chdir(DIR)
+    os.system(f'{script_path}/seurat_object_get_data_one_gene.sh {RDS} True normalized {" ".join(GENES)}')
+    
+    # Load and clean data
+    df = pd.read_csv(d_info['files.processed.meta'], sep='\t')
+    df.columns = utils.clean_str_values(df.columns)
+    df.rename({'unnamed__0': 'barcode'}, axis='columns', inplace=True)
+    df.set_index('barcode', inplace=True)
+    
+    # Ensure required columns exist in the meta file
+    required_columns = [colname_celltype, colname_tissue, colname_treg_subtype, colname_group]
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Missing columns in 'processed.meta': {', '.join(missing_columns)}.")
+    
+    # Add positivity columns dynamically for each gene
+    for gene in GENES:
+        gene_lower = gene.lower()  # Convert gene name to lowercase
+        if gene_lower in df.columns:
+            df[f'is_{gene_lower}_positive'] = (df[gene_lower] > 0).astype(int)
+        else:
+            logging.warning(f"Gene '{gene_lower}' not found in the data columns. Skipping.")
+    
+    # Clean string columns
+    for c in df.columns:
+        if df[c].dtype == 'object':
+            df[c] = utils.clean_str_values(df[c])
+
+    # Identify Treg cells
+    df['is_treg'] = 0
+    IDX = df[colname_celltype] == colname_celltype_value_treg
+    df.loc[IDX, 'is_treg'] = 1
+    
+    # Add additional columns
+    df['nb_tissue'] = df[colname_tissue]
+    df['nb_treg_subtype'] = df[colname_treg_subtype]
+    df['nb_group'] = df[colname_group]
+    
+    # Save the final DataFrame
+    if d_info.get('files.analysis_ready', None):
+        df.to_csv(d_info['files.analysis_ready'], index=True, header=True, sep='\t')
+    else:
+        raise ValueError(f'getInfo for {data_handle}, needs to have "files.analysis_ready" parameter defined')
+
+    
+    print(f'Created analysis ready data: {d_info["files.analysis_ready"]}. Load it via data_utils.getInfo(data_handle)["files.analysis_ready"]')

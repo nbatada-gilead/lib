@@ -11,6 +11,7 @@ import shutil
 from datetime import datetime
 
 database = {}
+DATA_DIR = os.path.join( os.path.expanduser("~"), 'data', 'geneinfo','genemaps') 
 DATABASE_FILE_PATH = os.path.join(os.path.dirname(__file__), 'genemap_utils_database.txt')
 
 #------------ This will be executed when module is loaded 
@@ -68,18 +69,19 @@ def __update_database(file_path=DATABASE_FILE_PATH):
 
 # Data Order as in data_utils.py (you can adjust if needed)
 DATA_ORDER = {
-    'files.raw': 1,
-    'files.map': 2,
+    'file.raw': 1,
+    'file.map': 2,
     'source': 3,
     'species': 4,
-    'script': 5
+    'script': 5,
+    'info': 6
 }
 
 def listAvailableData():
     """Prints out the keys in the database dictionary."""
-    print(list(database.keys()))
+    return(list(database.keys()))
 
-def queryData(query, keyword=None):
+def _queryData(query, keyword=None):
     """Search for data_handles in the database that meet certain criteria."""
     query = query.lower()
     result = []
@@ -96,37 +98,79 @@ def queryData(query, keyword=None):
     if len(result) == 1:
         result = result[0]
     return result
+def queryData(query, keyword=None):
+    """Search for data_handles in the database that meet certain criteria."""
+    query = query.lower()
+    result = []
+
+    for data_handle, details in database.items():
+        if query in data_handle.lower():
+            result.append(data_handle)
+        elif keyword:
+            # Check if the keyword exists in the data
+            value = details.get(keyword, '').lower()
+            if query in value:
+                result.append(data_handle)
+        else:
+            # Check all values if no specific keyword is given
+            if any(query in str(value).lower() for value in details.values()):
+                result.append(data_handle)
+
+    if len(result) == 1:
+        result = result[0]
+    return result
 
 def getFiles(data_handle):
     """Retrieve file paths for a specific data handle."""
     out = {}
     for key, value in database[data_handle].items():
-        if key.startswith('files.'):
-            if Path(value).suffix in {'.csv', '.tsv', '.txt'} and not value.startswith('http'):
+        if key.startswith('file.'):
+            if Path(value).suffix in {'.csv', '.tsv', '.txt','.map'} and not value.startswith('http'):
                 value = os.path.join(DATA_DIR, data_handle, value)
 
-            key = key.removeprefix('files.')
+            key = key.removeprefix('file.')
             out[key] = value
         
     return out
 
-def addNewData(data_handle, files_raw, files_map, source, species, script):
+import os
+
+def addNewData(data_handle, file_raw, file_map, source='human protein atlas', species='human', script='create_map.py', create_dir=True):
     """Add new information to the database and save it back to file."""
     global database
     
+    # Construct the folder path
+    folder_path = os.path.join(DATA_DIR, data_handle)
+    
+    # Check if the folder exists
+    if not os.path.exists(folder_path):
+        if create_dir:
+            # Create the folder if it doesn't exist and create_dir is True
+            os.makedirs(folder_path)
+            print(f'[Message] Created directory: {folder_path}')
+        else:
+            # Print a message and exit the function if create_dir is False
+            print(f'[Warning] Did not update the database because the directory does not exist. Use create_dir=True to create the directory.')
+            return
+    
+    # Add new data to the database
     if data_handle not in database:
         database[data_handle] = {}
     
-    database[data_handle]['files.raw'] = files_raw
-    database[data_handle]['files.map'] = files_map
+    database[data_handle]['file.raw'] = file_raw
+    database[data_handle]['file.map'] = file_map
     database[data_handle]['source'] = source
     database[data_handle]['species'] = species
     database[data_handle]['script'] = script
 
+    # Update the database
     __update_database()
+    print('[Message] Added new data: ', getInfo(data_handle))
 
-def getInfo(data_handle, tsv_format=True):
-    """Retrieve and format data from the database."""
+
+def getInfo(data_handle, tsv=False):
+    """Retrieve and format data from the database.
+    tsv=True if you want to copy and paste into excel"""
     info = []
 
     def flatten_dict(d, parent_key=''):
@@ -141,7 +185,7 @@ def getInfo(data_handle, tsv_format=True):
     flatten_dict(data)
     sorted_info = sorted(info, key=lambda x: DATA_ORDER.get(x[0], float('inf')))
 
-    if tsv_format:
+    if tsv:
         df = pd.DataFrame(sorted_info, columns=['Key', 'Value'])
         df_transposed = df.set_index('Key').T
         df_transposed.index = [data_handle]
@@ -190,5 +234,42 @@ def help():
             print(f"          {docstring}")
             print("\n")
 
-if __name__ == "__main__":
-    help()
+
+def mapGenesymbol(data_handle, input_data):
+    """Map gene symbols in the input_data to the values in data_handle.
+    
+    Args:
+        data_handle (str): The data handle to find the file.map path.
+        input_data (list or pd.Series): List of gene symbols or a column from a DataFrame.
+
+    Returns:
+        list: A list of gene IDs or empty strings, matching the length of input_data.
+    """
+    # Ensure input_data is a pandas Series if it's a column from a DataFrame
+    if isinstance(input_data, pd.Series):
+        input_data = input_data.tolist()
+    
+    # Check if the data_handle exists and retrieve the map file path
+    if data_handle not in database:
+        raise ValueError(f"Data handle '{data_handle}' not found in the database.")
+    
+    d_files = getFiles(data_handle)
+    
+    if 'map' not in d_files:
+        raise ValueError(f"'file.map' not found for data handle '{data_handle}' in the database.")
+    
+    map_file_path = d_files['map']
+    
+    # Load the mapping file
+    try:
+        map_df = pd.read_csv(map_file_path, sep='\t', header=None, names=['genesymbol', 'geneid'])
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Mapping file '{map_file_path}' not found.")
+    
+    # Create a dictionary for quick lookup
+    map_dict = pd.Series(map_df.geneid.values, index=map_df.genesymbol).to_dict()
+    
+    # Map input_data using the dictionary
+    output = [map_dict.get(gene, '') for gene in input_data]
+    
+    return output

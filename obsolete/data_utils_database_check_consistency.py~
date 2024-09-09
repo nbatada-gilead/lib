@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+import sys
+import os
+import argparse
+
+# Add the directory containing data_utils to sys.path
+sys.path.insert(0, os.path.expanduser('~/lib'))
+
+# Import the DATA_ORDER dictionary from data_utils
+import data_utils
+DATA_ORDER = data_utils.DATA_ORDER
+
+def check_database_format(file_path):
+    expected_keys = set(DATA_ORDER.keys())
+    inconsistent_entries = []
+    data_handle_errors = []
+    key_format_errors = []
+    corrected_lines = []
+
+    with open(file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check if line contains '='
+            if '=' not in line:
+                inconsistent_entries.append(f"Invalid format: {line}")
+                continue
+
+            # Split the line into data_handle and the rest
+            data_handle, rest = line.split('=', 1)
+            data_handle = data_handle.strip()
+            rest = rest.strip()
+
+            # Convert only data_handle to uppercase
+            if not data_handle.isupper():
+                data_handle_errors.append(f"Data handle should be uppercase: {line}")
+                data_handle = data_handle.upper()  # Correct the case
+
+            corrected_lines.append(f"{data_handle}={rest}")
+
+            # Check if rest contains a valid key
+            key = rest.split('=')[0].strip()
+            if key not in expected_keys:
+                key_format_errors.append(f"Invalid key format: {line}")
+
+    # Print corrected file content
+    print("\nCorrected File Content:")
+    for line in corrected_lines:
+        print(line)
+
+    # Print inconsistencies to stderr
+    if inconsistent_entries:
+        print("Inconsistent entries:", file=sys.stderr)
+        for entry in inconsistent_entries:
+            print(entry, file=sys.stderr)
+
+    if data_handle_errors:
+        print("\nData handle errors:", file=sys.stderr)
+        for error in data_handle_errors:
+            print(error, file=sys.stderr)
+
+    if key_format_errors:
+        print("\nKey format errors:", file=sys.stderr)
+        for error in key_format_errors:
+            print(error, file=sys.stderr)
+
+def main():
+    parser = argparse.ArgumentParser(description='Check the format of the data_utils_database.txt file.')
+    parser.add_argument('-f', '--database_file', type=str, required=True,
+                        help='Path to the data_utils_database.txt file')
+    args = parser.parse_args()
+
+    check_database_format(args.database_file)
+
+if __name__ == "__main__":
+    main()
