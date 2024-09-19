@@ -1,5 +1,4 @@
 import re
-import numpy as np
 import pandas as pd
 import importlib.util
 from pathlib import Path
@@ -412,9 +411,6 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
     # Ensure required columns exist in the meta file
     #required_columns = [colname_celltype, colname_tissue, colname_treg_subtype, colname_group]
     required_columns = [colname_celltype, colname_tissue, colname_group]
-    
-    print('required_columns=',required_columns)
-
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
         raise ValueError(f"Missing a column in the 'files.processed.meta' file: {', '.join(missing_columns)}.")
@@ -428,17 +424,9 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
             logging.warning(f"Gene '{gene_lower}' not found in the data columns. Skipping.")
     
     # Clean string columns
-    #print(df.columns)
-    #print(df.dtypes)
-    
     for c in df.columns:
-        try:
-            if df[c].dtype == 'object':
-                df[c] = utils.clean_str_values(df[c])
-        except AttributeError: # 
-            print(f'Skipping: column = {c}\n{df[c].head(1)}')
-            print(f'YOU MAY HAVE MULTIPLE COLUMNS WITH THE SAME NAME (in this case THIS ERROR WILL BE SHOWN TWICE)')
-            pass
+        if df[c].dtype == 'object':
+            df[c] = utils.clean_str_values(df[c])
 
     # Identify Treg cells
     df['nb_celltype']=df[colname_celltype]

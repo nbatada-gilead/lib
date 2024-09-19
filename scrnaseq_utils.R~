@@ -1,0 +1,65 @@
+
+library(dplyr)
+library(magrittr)
+library(Seurat)
+library(tidyverse)
+
+library(Seurat)
+library(data.table)
+library(ggplot2)
+
+create_seurat_object <- function(counts_dir, metadata_file) {
+   prefix <- basename(counts_dir)
+
+   # Load counts data using Read10X
+   counts <- Read10X(data.dir = counts_dir)
+   
+   # Load metadata
+   metadata <- read.csv(metadata_file, row.names = 1)
+   
+   # Create Seurat object
+   sobj <- CreateSeuratObject(counts = counts)
+   
+   # Add metadata to Seurat object
+   sobj <- AddMetaData(sobj, metadata = metadata)
+   
+   # Standard Seurat pipeline
+   sobj <- NormalizeData(sobj)
+   sobj <- FindVariableFeatures(sobj)
+   sobj <- ScaleData(sobj)
+   sobj <- RunPCA(sobj, npcs = 30)
+   sobj <- FindNeighbors(sobj, dims = 1:30)
+   sobj <- FindClusters(sobj, resolution = 0.5)
+   sobj <- RunUMAP(sobj, dims = 1:30)
+
+   sobj$batch <- ifelse(sobj$CellFromTumor == TRUE, "Tumor", "Normal") # data specific
+   
+   markers <- c("CD4", "FOXP3", "IL2RA", "CTLA4", "CCR8")
+   plot <- VlnPlot(sobj, features = markers, pt.size = 0.1, stack=TRUE) #, split.by = "batch")
+   ggplot2::ggsave(paste0(prefix, "_violin_plot.png"), plot)
+   plot <- Seurat::FeaturePlot(sobj, markers) #, split.by = "batch")
+   ggplot2::ggsave(paste0(prefix, "_feature_plot.png"), plot)
+
+   # Ask user to provide the cluster number for Tregs
+   treg_cluster <- as.numeric(readline(prompt = "Enter the cluster number corresponding to Tregs: "))
+
+   cells_in_tregs <- WhichCells(sobj, idents = treg_cluster)
+   print(length(cells_in_tregs))  # Check the number of cells in the best cluster
+   
+   sobj@meta.data$nb_cluster <- as.character(Idents(sobj))  # Copy current identities to the "nb_cluster" column
+   sobj@meta.data$nb_cluster[Cells(sobj) %in% cells_in_tregs] <- "tregs"  # Assign "tregs" to the best cluster
+   Idents(sobj) <- sobj@meta.data$nb_cluster
+   sobj_tregs <- subset(sobj, idents = "tregs")
+   saveRDS(sobj_tregs, file = paste0(prefix, "_tregs.rds"))
+
+   markers <- c("CD4", "FOXP3", "IL2RA", "CTLA4", "CCR8")
+   plot <- VlnPlot(sobj_tregs, features = markers, pt.size = 0.1, stack=TRUE) #, split.by = "batch")
+   ggplot2::ggsave(paste0(prefix, "_violin_plot_after.png"), plot)
+   plot <- Seurat::FeaturePlot(sobj_tregs, markers) #, split.by = "batch")
+   ggplot2::ggsave(paste0(prefix, "_feature_plot_after.png"), plot)
+
+   print(colnames(sobj@meta.data))  # Check if "nb_cluster" was added
+   print(table(sobj@meta.data$nb_cluster))  # Check the distribution of clusters including "tregs"
+   
+   return(sobj)
+}
