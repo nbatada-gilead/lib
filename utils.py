@@ -4,6 +4,28 @@ from collections.abc import Iterable
 import plotnine as p9
 import numpy as np
 
+from datetime import datetime
+
+def current_time():
+    now = datetime.now()
+    #current_time_str = now.strftime("%H:%M:%S (%Y-%m-%d)")
+    current_time_str = now.strftime("%H:%M (%m/%d)")
+    return(current_time_str)
+
+def dotplot(dfm, xcol='variable',ycol='value',sizecol='count'):
+    # dfm = melted/long format
+    g = (
+        p9.ggplot(dfm, p9.aes(x=xcol, y=ycol, size=sizecol))
+        + p9.geom_point(p9.aes(size=sizecol), color='blue', fill='lightblue', shape='o')
+        + p9.scale_size(range = (1, 10))  # Adjust the range of point sizes
+        + p9.theme(
+            axis_text_x=p9.element_text(rotation=30, hjust=1),  
+            figure_size=(3, 8) 
+        )
+    )
+    return(g)
+
+            
 def barplot_rownames_as_xticks(T): 
     # Input: T is a tabulated data (i.e. utils.tabulate output)
     T_long=T.reset_index().melt(id_vars=['index'])

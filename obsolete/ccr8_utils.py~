@@ -1,5 +1,14 @@
+import os
+HOME=f'{os.path.expanduser("~")}'
+import sys
+sys.path.insert(0,f'{HOME}/lib')
+import utils
+import pandas as pd
+import plotnine as p9
+
 def doublePostiveStats(df, gene_list, data_handle):
-    gene_list=[g.lower() for g in gene_list]
+    gene_list = [g.lower() for g in gene_list]
+    
     # Check if all genes are in the DataFrame
     missing_genes = [gene for gene in gene_list if f'is_{gene}_positive' not in df.columns]
     if missing_genes:
@@ -12,27 +21,46 @@ def doublePostiveStats(df, gene_list, data_handle):
         for group in df['nb_group'].unique():
             for gene in gene_list:
                 IDX = (df['is_treg'] == 1) & (df['nb_group'] == group) & (df['nb_tissue'] == tissue)
-                T = utils.tabulate(df[IDX], 'is_ccr8_positive', f'is_{gene}_positive', normalize_by='total')*100
-                T.index = ['ccr8_neg', 'ccr8_pos']
-                T.columns = [f'{gene}_neg', f'{gene}_pos']
-                T.index.name = 'ccr8_status'
-                
-                Tm = T.reset_index().melt(id_vars=['ccr8_status'])
-                Tm['tissue'] = tissue
-                Tm['group'] = group
-                Tm['reference'] = data_handle
-                results.append(Tm)
+                T = utils.tabulate(df[IDX], 'is_ccr8_positive', f'is_{gene}_positive', normalize_by='total') * 100
+
+                # Try setting the index/columns and catch potential ValueError
+                try:
+                    # Ensure T has exactly 2 rows and 2 columns before assigning new column names
+                    if T.shape == (2, 2):
+                        T.index = ['ccr8_neg', 'ccr8_pos']
+                        T.columns = [f'{gene}_neg', f'{gene}_pos']
+                        T.index.name = 'ccr8_status'
+
+                        Tm = T.reset_index().melt(id_vars=['ccr8_status'])
+                        Tm['tissue'] = tissue
+                        Tm['group'] = group
+                        Tm['reference'] = data_handle
+                        results.append(Tm)
+                    else:
+                        print(f"Skipping gene {gene} for group {group} and tissue {tissue} due to insufficient data.")
+
+                except ValueError as e:
+                    print(f"Error setting index/columns for gene {gene}, group {group}, tissue {tissue}")
+                    print(f"T matrix: \n{T}")
+                    raise e  # Re-raise the error for further debugging
 
     # Concatenate results for all genes, groups, and tissues
-    df_stats= pd.concat(results, ignore_index=True)
-    df_stats_dp=df_stats[(df_stats.variable.str.endswith('_pos')) & (df_stats.ccr8_status.str.endswith('_pos'))]
-    df_stats_dp['gene']=df_stats_dp.variable.str.removesuffix('_pos').str.upper()
+    df_stats = pd.concat(results, ignore_index=True)
+    df_stats_dp = df_stats[(df_stats.variable.str.endswith('_pos')) & (df_stats.ccr8_status.str.endswith('_pos'))]
+    df_stats_dp['gene'] = df_stats_dp.variable.str.removesuffix('_pos').str.upper()
 
-    return(df_stats_dp)
+    return df_stats_dp
 
-def plotDoublePositiveStats(df_stats_dp):
+
+def plotDoublePositiveStats(df_stats_dp, version=None):
     #input is a output of doublePostiveStats()
-    g=p9.ggplot(df_stats_dp, p9.aes(x='gene', y='value', fill='group')) + p9.geom_bar(stat='identity', position='position_dodge') + p9.facet_grid('tissue~reference') + p9.ylab('Percent double positive with CCR8+')
+    #g=p9.ggplot(df_stats_dp, p9.aes(x='gene', y='value', fill='group')) + p9.geom_bar(stat='identity', position='position_dodge') + p9.facet_grid('tissue~reference') + p9.ylab('Percent double positive with CCR8+')
+    
+    if version:
+        g=p9.ggplot(df_stats_dp, p9.aes(x='tissue', y='value', fill='tissue')) + p9.geom_bar(stat='identity', position='position_dodge') + p9.facet_grid('gene~group', scales='free_y') + p9.ylab('Percent double positive with CCR8+') + p9.theme_classic() + p9.theme(axis_text_x=p9.element_text(rotation=30, hjust=1))
+    else:
+        g=p9.ggplot(df_stats_dp, p9.aes(x='reference', y='value', fill='group')) + p9.geom_bar(stat='identity', position='position_dodge') + p9.facet_grid('gene~tissue', scales='free_y') + p9.ylab('Percent double positive with CCR8+') + p9.theme_classic() + p9.theme(axis_text_x=p9.element_text(rotation=30, hjust=1))
+        
     return(g)
 
 def ccr8BispecificGenes():

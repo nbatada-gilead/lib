@@ -86,6 +86,7 @@ DATA_ORDER = {
     'colname_group':43,
     'files.analysis_ready':44,
     'files.patient_info':45,
+    'colname_disease':46,
 }
 
 def __update_database(file_path=DATABASE_FILE_PATH):
@@ -207,7 +208,7 @@ def updateInfo(data_handle=None, help=False, **kwargs):
             # Suggest similar valid keys
             closest_match = [k for k in valid_keys if key in k]
             suggestion = f" Instead, specify '{closest_match[0]}'" if closest_match else ""
-            print(f"Warning: Key '{key}' not found in DATA_ORDER.{suggestion}")
+            print(f"SKIPPING: Key '{key}' not found in DATA_ORDER.{suggestion}")
         else:
             # Update the database if the key is valid
             database[data_handle][key] = value
@@ -336,8 +337,10 @@ def help_searchDatabase():
 
 
 
+#GENES_default=[]
+#GENES_additional=[]
 
-def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFNG', 'IL17A', 'CTLA4', 'PDCD1', 'CD27', 'IKZF2', 'TNFRSF18', 'CD177', 'TNFRSF8', 'CD74', 'FUT7', 'IL1R2', 'IL12RB2', 'TNFRSF4', 'CXCR3', 'STAT1', 'IL10']):
+def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'IFNG', 'IL17A', 'CTLA4', 'PDCD1', 'CD27', 'IKZF2', 'TNFRSF18', 'CD177', 'TNFRSF8', 'CD74', 'FUT7', 'IL1R2', 'IL12RB2', 'TNFRSF4', 'CXCR3', 'STAT1', 'IL10'], GENES_additional=None):
     """
     Prepares RNA-seq data from a Seurat object and processes gene expression data.
 
@@ -357,9 +360,11 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
     )
 
     """
-    
+    print(utils.current_time())
     script_path = os.path.expanduser('~/bin')
 
+    if GENES_additional:
+        GENES=list(set(GENES)| set(GENES_additional))
     # Check if the data_handle exists in data_utils
     if data_handle not in database:
         raise ValueError(f"Data handle '{data_handle}' not found in data_utils.")
@@ -377,13 +382,17 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
         raise ValueError("GENES must be a non-empty list of gene names.")
     
     colname_celltype = d_info.get('colname_celltype',None)
-    if not colname_celltype:
+    ## nb_celltype
+    ## celltype_rds (in rds)
+    if not colname_celltype: # in the d_info: by default make it nb_celltype or celltype_rds
         raise ValueError("getInfo doesn't define required parameter: colname_celltype.")
-    
+
+    ## is_treg (in rds)
     colname_celltype_value_treg = d_info.get('colname_celltype_value_treg', None)
     if not colname_celltype_value_treg:
         raise ValueError("getInfo doesn't define required parameter: colname_celltype_value_treg.")
-    
+
+    ## tissue_rds (in rds)
     colname_tissue = d_info.get('colname_tissue', None)
     if not colname_tissue:
         raise ValueError("getInfo doesn't define required parameter: colname_tissue.")
@@ -391,7 +400,8 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
     #colname_treg_subtype = d_info.get('colname_treg_subtype', None)
     #if not colname_treg_subtype:
     #    raise ValueError("getInfo doesn't define required parameter: colname_treg_subtype.")
-    
+
+    ## group_rds (in rds)
     colname_group = d_info.get('colname_group')
     if not colname_group:
         raise ValueError("getInfo doesn't define required parameter: colname_group.")
@@ -400,9 +410,9 @@ def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFN
     RDS = d_info['files.processed.rds']
     DIR = d_info['files.processed_dir']    
     os.chdir(DIR)
-    os.system(f'{script_path}/seurat_object_get_data_one_gene.sh {RDS} True normalized {" ".join(GENES)}')
+    os.system(f'{script_path}/seurat_object_get_data_one_gene.sh {RDS} True normalized {" ".join(GENES)}') # will create files.processed.meta file
     
-    # Load and clean data
+
     df = pd.read_csv(d_info['files.processed.meta'], sep='\t')
     df.columns = utils.clean_str_values(df.columns)
     df.rename({'unnamed__0': 'barcode'}, axis='columns', inplace=True)

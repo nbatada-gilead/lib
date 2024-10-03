@@ -6,6 +6,39 @@ import utils
 import pandas as pd
 import plotnine as p9
 
+def singlePositiveStats(df, gene_list, data_handle):
+    gene_list = [g.lower() for g in gene_list]
+
+    # Check if all genes are in the DataFrame
+    missing_genes = [gene for gene in gene_list if f'is_{gene}_positive' not in df.columns]
+    if missing_genes:
+        raise ValueError(f"These genes are missing in the DataFrame: {', '.join(missing_genes)}")
+
+    results_single_positive = []
+
+    # Loop over all unique tissues and groups in the DataFrame
+    for tissue in df['nb_tissue'].unique():
+        for group in df['nb_group'].unique():
+            # Calculate single positive percentages for each gene
+            for gene in gene_list:
+                column_name = f'is_{gene}_positive'
+                IDX = (df['is_treg'] == 1) & (df['nb_group'] == group) & (df['nb_tissue'] == tissue)
+                gene_counts = df[IDX][column_name].value_counts(normalize=True) * 100
+                if 1 in gene_counts.index:
+                    results_single_positive.append({
+                        'tissue': tissue,
+                        'group': group,
+                        'gene': gene.upper(),
+                        'positive_percentage': gene_counts[1],
+                        'reference': data_handle
+                    })
+
+    # Single positive statistics
+    df_stats_single_positive = pd.DataFrame(results_single_positive)
+
+    return df_stats_single_positive
+
+
 def doublePostiveStats(df, gene_list, data_handle):
     gene_list = [g.lower() for g in gene_list]
 
@@ -143,3 +176,134 @@ def ccr8BispecificGenes():
     # TNFRSF8 (aka CD30)
     # FUT7 (aka CD15s)
     return 'CD177 TNFRSF8 CD74 FUT7 IL1R2'.split()
+
+def plotSinglePositiveStats(df_stats):
+    import plotnine as p9
+    g=p9.ggplot(df_stats, p9.aes(x='gene', y='positive_percentage', fill='group')) + p9.geom_bar(stat='identity', position='position_dodge')  + p9.facet_grid('.~tissue') + p9.theme(figure_size=(10,5), axis_text_x=p9.element_text(rotation=30, hjust=1))
+    return(g)
+
+
+compute_contingency_table <- function(sobj, gene) {
+  # Ensure the gene exists in the Seurat object
+  if (!gene %in% rownames(sobj@assays$RNA@data)) {
+    stop(paste("Gene", gene, "not found in the Seurat object."))
+  }
+  
+  # Map both "normal" and "control" to "control"
+  sobj@meta.data <- sobj@meta.data %>%
+    mutate(group_rds = ifelse(group_rds %in% c("normal", "control"), "control", group_rds))
+
+  # Create the group_combined column if it doesn't exist
+  if (!"group_combined" %in% colnames(sobj@meta.data)) {
+    sobj@meta.data <- sobj@meta.data %>%
+      mutate(CCR8_expr_group = ifelse(sobj@assays$RNA@data["CCR8", ] > 0, "CCR8_positive", "CCR8_zero"),
+             group_combined = paste(group_rds, CCR8_expr_group, sep = "_"))
+  }
+
+  # Calculate gene positive based on expression > 0
+  sobj@meta.data <- sobj@meta.data %>%
+    mutate(gene_positive = ifelse(sobj@assays$RNA@data[gene, ] > 0, 1, 0))
+
+  # Subset for CCR8 positive/zero and tumor/control cells
+  tumor_ccr8_positive <- sobj@meta.data %>%
+    filter(group_combined == "tumor_CCR8_positive")
+  control_ccr8_positive <- sobj@meta.data %>%
+    filter(group_combined == "control_CCR8_positive")
+  
+  tumor_ccr8_zero <- sobj@meta.data %>%
+    filter(group_combined == "tumor_CCR8_zero")
+  control_ccr8_zero <- sobj@meta.data %>%
+    filter(group_combined == "control_CCR8_zero")
+
+  # Create contingency table for the gene
+  gene_tumor_positive <- sum(tumor_ccr8_positive$gene_positive == 1)
+  gene_tumor_negative <- sum(tumor_ccr8_positive$gene_positive == 0)
+  gene_control_positive <- sum(control_ccr8_positive$gene_positive == 1)
+  gene_control_negative <- sum(control_ccr8_positive$gene_positive == 0)
+
+  # Calculate percentages
+  tumor_pct_positive <- gene_tumor_positive / (gene_tumor_positive + gene_tumor_negative) * 100
+  control_pct_positive <- gene_control_positive / (gene_control_positive + gene_control_negative) * 100
+  fold_change <- tumor_pct_positive / control_pct_positive
+  
+  # Combine into a contingency table
+  gene_table <- matrix(c(gene_tumor_positive, gene_tumor_negative, gene_control_positive, gene_control_negative),
+                       nrow = 2,
+                       byrow = TRUE,
+                       dimnames = list(c("Tumor", "Control"), c(paste0(gene, "_Positive"), paste0(gene, "_Negative"))))
+
+  # Return results
+  return(list(table = gene_table, tumor_pct_positive = tumor_pct_positive, 
+              control_pct_positive = control_pct_positive, fold_change = fold_change))
+}
+
+# Given a gene, a stat test for increase will be done for CCR8+ tumor versus CCR8+ normal tregs (this will be from compute_contingency_table)
+perform_stat_test <- function(sobj, gene) {
+  # Compute the contingency table and percentages
+  results <- compute_contingency_table(sobj, gene)
+  gene_table <- results$table
+  tumor_pct_positive <- results$tumor_pct_positive
+  control_pct_positive <- results$control_pct_positive
+  fold_change <- results$fold_change
+
+  # Perform statistical test
+  if (any(gene_table == 0)) {
+    gene_test <- fisher.test(gene_table)
+    test_type <- "Fisher's Exact Test"
+  } else {
+    gene_test <- chisq.test(gene_table)
+    test_type <- "Chi-Square Test"
+  }
+
+  # Print results
+  print(paste(gene, test_type))
+  print(gene_test)
+  print(paste("Tumor % positive:", tumor_pct_positive))
+  print(paste("Control % positive:", control_pct_positive))
+  print(paste("Fold change (tumor/control):", fold_change))
+
+  # Return test results
+  return(list(test = gene_test, tumor_pct_positive = tumor_pct_positive, 
+              control_pct_positive = control_pct_positive, fold_change = fold_change))
+}
+
+# Given a gene,data from compute_contingency_table will be used to create a plot
+
+create_pie_chart <- function(sobj, gene) {
+    # Compute the contingency table and percentages
+    results <- compute_contingency_table(sobj, gene)
+    tumor_pct_positive <- results$tumor_pct_positive
+    control_pct_positive <- results$control_pct_positive
+    tumor_zero_pct <- 100 - tumor_pct_positive
+    control_zero_pct <- 100 - control_pct_positive
+    
+    # Prepare data for pie chart
+    pie_data <- data.frame(
+        Group = factor(c("Tumor", "Tumor", "Control", "Control"),
+                       levels = c("Control", "Tumor")),
+        Status = c("Positive", "Negative", "Positive", "Negative"),
+        Percent = c(tumor_pct_positive, tumor_zero_pct, control_pct_positive, control_zero_pct)
+    )
+    
+    # Add labels for percentages, only for Positive slices
+    pie_data$label <- ifelse(pie_data$Status == "Positive", paste0(round(pie_data$Percent, 1), "%"), "")
+    
+    # Create pie chart
+    pie_chart <- ggplot(pie_data, aes(x = "", y = Percent, fill = Status)) +
+        geom_bar(stat = "identity", width = 1, color = "white") +
+        coord_polar("y") +
+        facet_wrap(~ Group, ncol = 2) +
+        labs(title = paste(gene, "Co-expression Pie Chart (CCR8 Positive Only)"),
+             fill = "Gene Expression") +
+        geom_text(aes(label = label), position = position_stack(vjust = 0.5)) +
+        theme_void() +
+        scale_fill_manual(values = c("Positive" = "dodgerblue", "Negative" = "gray80"))
+    
+    # Print pie chart
+    print(pie_chart)
+    
+    # Return plot object
+    return(pie_chart)
+}
+
+

@@ -236,7 +236,7 @@ def help():
             print("\n")
 
 
-def mapGenesymbol(data_handle, input_data):
+def map(data_handle, input_data):
     """Map gene symbols in the input_data to the values in data_handle.
     
     Args:
@@ -271,8 +271,8 @@ def mapGenesymbol(data_handle, input_data):
     map_dict = pd.Series(map_df.geneid.values, index=map_df.genesymbol).to_dict()
     
     # Map input_data using the dictionary
-    output = [map_dict.get(gene, '') for gene in input_data]
-    
+    output = [map_dict.get(gene, '0') for gene in input_data]
+    # always string because will be working with other categories of data
     return output
 
 def updateInfo(data_handle=None, help=False, **kwargs):

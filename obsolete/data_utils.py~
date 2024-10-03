@@ -84,6 +84,7 @@ DATA_ORDER = {
     'colname_treg_subtype':42,
     'colname_group':43,
     'files.analysis_ready':44,
+    'files.patient_info':45,
 }
 
 def __update_database(file_path=DATABASE_FILE_PATH):
@@ -109,29 +110,10 @@ def getInfo(data_handle):
     data_handle = data_handle.upper()
     info = []
 
-    #def flatten_dict(d, parent_key=''):
-    #    for k, v in d.items():
-    #        new_key = f"{parent_key}.{k}" if parent_key else k
-    #        if isinstance(v, dict):
-    #            flatten_dict(v, new_key)
-    #        else:
-    #            info.append((new_key, v))
-
     data_full = database.get(data_handle, {})
     data  ={}
     for key, value in data_full.items():
-        #if key.startswith('files.'):
-        #    continue
-        #else:
         data[key] = value
-
-    #flatten_dict(data)
-    #sorted_info = sorted(info, key=lambda x: DATA_ORDER.get(x[0], float('inf')))
-    #df = pd.DataFrame(sorted_info, columns=['Key', 'Value'])
-    #df_transposed = df.set_index('Key').T
-    #df_transposed.index = [data_handle]
-    #df_transposed.columns.name = 'data_handle'
-    #return df_transposed
     return(data)
 
 
@@ -156,22 +138,6 @@ def listAvailableData():
     """Prints out the keys in the database dictionary."""
     return(list(database.keys()))
 
-
-# make this obsolete. To simplify-- just use getInfo and use the parameters with the 'files.' prefix
-#def getFiles(data_handle):
-#    """Retrieve file paths for a specific data handle."""
-#    data_handle = data_handle.upper()
-#    if data_handle not in database:
-#        print(f"Data handle '{data_handle}' not found.")
-#        return {}
-#    
-#    out = {}
-#    from pathlib import Path
-#    for key, value in database[data_handle].items():
-#        if key.startswith('files.'):
-#            key = key.removeprefix('files.')
-#            out[key] = value
-#    return out
 
 def newDataTemplate(data_handle):
     """Print a template for the specified data handle using DATA_ORDER."""
@@ -370,7 +336,7 @@ def help_searchDatabase():
 
 
 
-def prepareData(data_handle, GENES):
+def prepareData(data_handle, GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFNG', 'IL17A', 'CTLA4', 'PDCD1', 'CD27', 'IKZF2', 'TNFRSF18', 'CD177', 'TNFRSF8', 'CD74', 'FUT7', 'IL1R2', 'IL12RB2', 'TNFRSF4', 'CXCR3', 'STAT1', 'IL10']):
     """
     Prepares RNA-seq data from a Seurat object and processes gene expression data.
 
@@ -387,15 +353,6 @@ def prepareData(data_handle, GENES):
     - script_path: Path to the script for running Seurat object gene extraction.
     - default_genes: List of default genes to be included if missing from GENES.
 
-    Usage:
-    df = prepareData(
-      data_handle='CANCER_2020_32603654_LUOMA', 
-      GENES=['CCR8', 'FOXP3', 'CD3E', 'CD4', 'CD8A', 'IFNG', 'IL17A', 'CTLA4', 'PDCD1', 'CD27', 'IKZF2', 'TNFRSF18', 'CD177', 'TNFRSF8', 'CD74', 'FUT7', 'IL1R2', 'IL12RB2', 'TNFRSF4', 'CXCR3', 'STAT1', 'IL10'], 
-      colname_celltype='authors_cell_type_level_2__cd4_t_cell', 
-      colname_celltype_value_treg='7__regulatory_t_cell_treg', 
-      colname_tissue='tissue_column_name', 
-      colname_treg_subtype='authors_cell_type_level_3__treg_subclustering', 
-      colname_group='group_column_name'
     )
 
     """
@@ -412,7 +369,7 @@ def prepareData(data_handle, GENES):
     required_files = ['files.processed.meta', 'files.processed_dir', 'files.processed.rds']
     missing_files = [f for f in required_files if f not in d_info]
     if missing_files:
-        raise ValueError(f"Missing files for data_handle '{data_handle}': {', '.join(missing_files)}")
+        raise ValueError(f"File not found ('{data_handle}'): {', '.join(missing_files)}")
     
     # Ensure the gene list is valid
     if not GENES or not isinstance(GENES, list):
@@ -430,9 +387,9 @@ def prepareData(data_handle, GENES):
     if not colname_tissue:
         raise ValueError("getInfo doesn't define required parameter: colname_tissue.")
     
-    colname_treg_subtype = d_info.get('colname_treg_subtype', None)
-    if not colname_treg_subtype:
-        raise ValueError("getInfo doesn't define required parameter: colname_treg_subtype.")
+    #colname_treg_subtype = d_info.get('colname_treg_subtype', None)
+    #if not colname_treg_subtype:
+    #    raise ValueError("getInfo doesn't define required parameter: colname_treg_subtype.")
     
     colname_group = d_info.get('colname_group')
     if not colname_group:
@@ -449,12 +406,14 @@ def prepareData(data_handle, GENES):
     df.columns = utils.clean_str_values(df.columns)
     df.rename({'unnamed__0': 'barcode'}, axis='columns', inplace=True)
     df.set_index('barcode', inplace=True)
-    
+
+    # print(df.columns)
     # Ensure required columns exist in the meta file
-    required_columns = [colname_celltype, colname_tissue, colname_treg_subtype, colname_group]
+    #required_columns = [colname_celltype, colname_tissue, colname_treg_subtype, colname_group]
+    required_columns = [colname_celltype, colname_tissue, colname_group]
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
-        raise ValueError(f"Missing columns in 'processed.meta': {', '.join(missing_columns)}.")
+        raise ValueError(f"Missing a column in the 'files.processed.meta' file: {', '.join(missing_columns)}.")
     
     # Add positivity columns dynamically for each gene
     for gene in GENES:
@@ -470,20 +429,49 @@ def prepareData(data_handle, GENES):
             df[c] = utils.clean_str_values(df[c])
 
     # Identify Treg cells
+    df['nb_celltype']=df[colname_celltype]
     df['is_treg'] = 0
     IDX = df[colname_celltype] == colname_celltype_value_treg
-    df.loc[IDX, 'is_treg'] = 1
+    # if IDX is all false, then raise an error
+    if not np.any(IDX):
+        print(f'[WARNING] Did not find any treg cells. colname_celltype={colname_celltype}, colname_celltype_value_treg={colname_celltype_value_treg}')
+    else:
+        df.loc[IDX, 'is_treg'] = 1
     
     # Add additional columns
     df['nb_tissue'] = df[colname_tissue]
-    df['nb_treg_subtype'] = df[colname_treg_subtype]
+    # df['nb_treg_subtype'] = df[colname_treg_subtype]
     df['nb_group'] = df[colname_group]
+
+    # define other columns that of interest
+    # colname_donorid
+    # colname_ .. etc
     
-    # Save the final DataFrame
-    if d_info.get('files.analysis_ready', None):
-        df.to_csv(d_info['files.analysis_ready'], index=True, header=True, sep='\t')
-    else:
-        raise ValueError(f'getInfo for {data_handle}, needs to have "files.analysis_ready" parameter defined')
+    # Save the final DataFrame (but what if I need to make further modifications?)
 
     
-    print(f'Created analysis ready data: {d_info["files.analysis_ready"]}. Load it via data_utils.getInfo(data_handle)["files.analysis_ready"]')
+    #if d_info.get('files.analysis_ready', None):
+    #    df.to_csv(d_info['files.analysis_ready'], index=True, header=True, sep='\t')
+    #else:
+    #    raise ValueError(f'getInfo for {data_handle}, needs to have "files.analysis_ready" parameter defined')    
+    #print(f'Created analysis ready data: {d_info["files.analysis_ready"]}. Load it via data_utils.getInfo(data_handle)["files.analysis_ready"]')
+
+    saveAnalysisReadyData(df, data_handle)
+
+def getAnalysisReadyData(data_handle):
+    d_info=getInfo(data_handle)
+    if d_info.get('files.analysis_ready', None):
+        df=pd.read_csv(d_info['files.analysis_ready'], sep='\t', index_col='barcode')
+        return(df)
+    else:
+        raise ValueError(f'getInfo for {data_handle}, needs to have "files.analysis_ready" parameter defined')
+    
+
+def saveAnalysisReadyData(df, data_handle):
+    d_info=getInfo(data_handle)
+    if d_info.get('files.analysis_ready', None):
+        df.to_csv(d_info['files.analysis_ready'], index=True, header=True, sep='\t')
+        print(f'[Message] Analysis ready file saved {d_info["files.analysis_ready"]}')
+    else:
+        raise ValueError(f'getInfo for {data_handle}, needs to have "files.analysis_ready" parameter defined')
+    
